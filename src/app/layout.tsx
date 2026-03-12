@@ -3,9 +3,9 @@ import { ClerkProvider, SignInButton, SignUpButton, Show, UserButton } from "@cl
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ApexMBA — Independent Business Study Platform",
+  title: "ApexMBA — The Open Source MBA",
   description:
-    "A self-directed MBA curriculum built around real-world cases, daily assignments, and structured note-taking.",
+    "An open source MBA curriculum built around real-world cases, daily assignments, and structured note-taking. Community-driven. Transparent. Free forever.",
 };
 
 export default function RootLayout({

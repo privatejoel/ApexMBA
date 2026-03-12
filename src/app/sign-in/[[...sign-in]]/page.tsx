@@ -8,7 +8,7 @@ export default function SignInPage() {
           <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#1a3a5c,#c0392b)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: "#fff" }}>▲</div>
           <span style={{ color: "#fff", fontSize: 22, fontFamily: "Georgia, serif" }}>ApexMBA</span>
         </div>
-        <p style={{ color: "#7aadcf", fontFamily: "sans-serif", fontSize: 14, margin: 0 }}>Sign in to continue your MBA journey</p>
+        <p style={{ color: "#7aadcf", fontFamily: "sans-serif", fontSize: 14, margin: 0 }}>Sign in to continue your open source MBA</p>
       </div>
       <SignIn />
     </div>

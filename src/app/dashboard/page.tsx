@@ -359,7 +359,7 @@ export default function Dashboard() {
                                     </div>
                                   )}
                                   <div style={{ marginTop: 10, fontSize: 11, color: "#c0b0d0", textAlign: "right", fontFamily: "sans-serif" }}>
-                                    Saved to your account · <span onClick={() => setView("notes")} style={{ color: "#7c4dab", cursor: "pointer", textDecoration: "underline" }}>View all notes →</span>
+                                    Saved locally in your browser · <span onClick={() => setView("notes")} style={{ color: "#7c4dab", cursor: "pointer", textDecoration: "underline" }}>View all notes →</span>
                                   </div>
                                 </div>
                               </div>
@@ -391,7 +391,7 @@ export default function Dashboard() {
 
       <div style={{ background: "#080f18", padding: "18px 24px", marginTop: 40 }}>
         <p style={{ maxWidth: 1100, margin: "0 auto", fontSize: 11, color: "#2a4a60", fontFamily: "sans-serif", lineHeight: 1.7 }}>
-          ApexMBA is an independent self-study platform not affiliated with Harvard University or Harvard Business School.
+          ApexMBA is an open source self-study platform not affiliated with Harvard University or Harvard Business School. Licensed under MIT.
         </p>
       </div>
     </div>
