@@ -6,6 +6,9 @@ import Link from "next/link";
 import { WEEKS, TYPE_COLORS } from "@/lib/data";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
+import ProfileSettings from "./ProfileSettings";
+import CommunityNotes from "./CommunityNotes";
+import OpenDataView from "./OpenDataView";
 
 const ExcalidrawCanvas = dynamic(() => import("./ExcalidrawWrapper"), {
   ssr: false,
@@ -123,7 +126,7 @@ type NoteTab = Record<string, "guided" | "free" | "draw">;
 
 export default function Dashboard() {
   const { user } = useUser();
-  const [view, setView] = useState<"plan" | "module" | "notes">("module");
+  const [view, setView] = useState<"plan" | "module" | "notes" | "community">("module");
   const [activeWeek, setActiveWeek] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [done, setDone] = usePersistedState<Done>("done", {});
@@ -131,6 +134,16 @@ export default function Dashboard() {
   const [noteTab, setNoteTab] = useState<NoteTab>({});
   const [previewMode, setPreviewMode] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
+  const [notesPublicDefault, setNotesPublicDefault] = usePersistedState<boolean>("notesPublicDefault", true);
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "error">("idle");
+  const [communityNoteSession, setCommunityNoteSession] = useState<string | null>(null);
+  const [communityCounts, setCommunityCounts] = useState<Record<string, number>>({});
+
+  const progressSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notesSyncTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const prevNotesRef = useRef<Notes>({});
 
   const getPreview = (k: string) => previewMode[k] ?? false;
   const togglePreview = (k: string) => setPreviewMode(p => ({ ...p, [k]: !p[k] }));
@@ -162,6 +175,88 @@ export default function Dashboard() {
     return false;
   };
 
+  // ── Profile init: runs once per device on first sign-in after this feature ──
+  useEffect(() => {
+    if (!user?.id) return;
+    const initKey = `apexmba_${user.id}_db_init`;
+    if (localStorage.getItem(initKey)) { setProfileReady(true); return; }
+    (async () => {
+      try {
+        await fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ display_name: user.firstName ?? "Learner", is_anonymous: false }),
+        });
+        const localDone = JSON.parse(localStorage.getItem(`apexmba_${user.id}_done`) ?? "{}");
+        if (Object.keys(localDone).length > 0) {
+          await fetch("/api/progress/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ done: localDone }),
+          });
+        }
+        localStorage.setItem(initKey, "1");
+      } catch {}
+      setProfileReady(true);
+    })();
+  }, [user?.id, user?.firstName]);
+
+  // ── Progress sync: debounced 1 s after done changes ──
+  useEffect(() => {
+    if (!user?.id || !profileReady) return;
+    if (progressSyncTimer.current) clearTimeout(progressSyncTimer.current);
+    progressSyncTimer.current = setTimeout(async () => {
+      setSyncStatus("syncing");
+      try {
+        await fetch("/api/progress/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ done }),
+        });
+        setSyncStatus("idle");
+      } catch {
+        setSyncStatus("error");
+      }
+    }, 1000);
+  }, [done, user?.id, profileReady]);
+
+  // ── Notes sync: debounced 1.5 s per session after text note changes ──
+  useEffect(() => {
+    if (!user?.id || !profileReady) return;
+    const prev = prevNotesRef.current;
+    const changed = new Set<string>();
+    for (const key of Object.keys(notes)) {
+      const p = prev[key], c = notes[key];
+      if (p !== c && (c.prompts?.some(s => s?.trim()) || c.freeNote?.trim())) changed.add(key);
+    }
+    prevNotesRef.current = notes;
+    if (!changed.size) return;
+    for (const key of changed) {
+      if (notesSyncTimers.current[key]) clearTimeout(notesSyncTimers.current[key]);
+      const snap = notes[key];
+      notesSyncTimers.current[key] = setTimeout(() => {
+        fetch("/api/notes/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_key: key, prompts: snap.prompts ?? [], free_note: snap.freeNote ?? "", notes_public: notesPublicDefault }),
+        }).catch(console.error);
+      }, 1500);
+    }
+  }, [notes, user?.id, profileReady]);
+
+  // ── Fetch community count when a session expands ──
+  useEffect(() => {
+    if (!expanded || communityCounts[expanded] !== undefined) return;
+    fetch(`/api/progress/community?sessionKey=${expanded}`)
+      .then(r => r.json())
+      .then(body => {
+        if (typeof body.completedCount === "number") {
+          setCommunityCounts(p => ({ ...p, [expanded]: body.completedCount }));
+        }
+      })
+      .catch(() => {});
+  }, [expanded, communityCounts]);
+
   const total = WEEKS.reduce((s, w) => s + w.days.length, 0);
   const completed = Object.values(done).filter(Boolean).length;
   const pct = Math.round(completed / total * 100);
@@ -192,6 +287,7 @@ export default function Dashboard() {
     { k: "plan" as const, label: "📚 Curriculum" },
     { k: "module" as const, label: "Finance I" },
     { k: "notes" as const, label: allNoted.length > 0 ? `📓 Notes (${allNoted.length})` : "📓 Notes" },
+    { k: "community" as const, label: "🌐 Community" },
   ];
 
   return (
@@ -208,7 +304,14 @@ export default function Dashboard() {
               <button key={k} onClick={() => setView(k)} style={{ padding: "6px 14px", background: view === k ? "#1a3a5c" : "transparent", color: view === k ? "#fff" : "#7aadcf", border: `1px solid ${view === k ? "#2a5a8c" : "#1e3050"}`, borderRadius: 4, cursor: "pointer", fontSize: 12, fontFamily: "sans-serif" }}>{label}</button>
             ))}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              onClick={() => setProfileOpen(true)}
+              title="Profile Settings"
+              style={{ background: "transparent", border: "1px solid #2a4060", borderRadius: 5, padding: "5px 10px", cursor: "pointer", color: "#7aadcf", fontSize: 12, fontFamily: "sans-serif", display: "flex", alignItems: "center", gap: 5 }}
+            >
+              ⚙️ <span style={{ display: "none" }}>Profile</span>
+            </button>
             <span style={{ color: "#5a8aaa", fontFamily: "sans-serif", fontSize: 12 }}>{user?.firstName}</span>
             <UserButton />
           </div>
@@ -217,6 +320,9 @@ export default function Dashboard() {
 
       {/* Content */}
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
+
+        {/* ── COMMUNITY / OPEN DATA ── */}
+        {view === "community" && <OpenDataView />}
 
         {/* ── CURRICULUM ── */}
         {view === "plan" && (
@@ -451,11 +557,36 @@ export default function Dashboard() {
                                       />
                                     </div>
                                   )}
-                                  <div style={{ marginTop: 10, fontSize: 11, color: "#c0b0d0", textAlign: "right", fontFamily: "sans-serif" }}>
-                                    Saved locally in your browser · <span onClick={() => setView("notes")} style={{ color: "#7c4dab", cursor: "pointer", textDecoration: "underline" }}>View all notes →</span>
+                                  <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <div style={{ fontSize: 11, color: "#c0b0d0", fontFamily: "sans-serif" }}>
+                                      {syncStatus === "syncing" ? "Saving…" : syncStatus === "error" ? "⚠ Sync failed — saved locally" : "Saved"}
+                                      {communityCounts[key] !== undefined && (
+                                        <span style={{ marginLeft: 10, color: "#7aadcf" }}>
+                                          · {communityCounts[key]} learner{communityCounts[key] !== 1 ? "s" : ""} completed this
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span onClick={() => setView("notes")} style={{ fontSize: 11, color: "#7c4dab", cursor: "pointer", textDecoration: "underline", fontFamily: "sans-serif" }}>View all notes →</span>
                                   </div>
                                 </div>
                               </div>
+
+                              {/* Community notes toggle */}
+                              {communityNoteSession !== key ? (
+                                <button
+                                  onClick={() => setCommunityNoteSession(key)}
+                                  style={{ marginTop: 10, background: "transparent", border: "1px solid #c9b8e0", borderRadius: 5, padding: "7px 14px", fontSize: 11, color: "#7c4dab", cursor: "pointer", fontFamily: "sans-serif", display: "flex", alignItems: "center", gap: 6 }}
+                                >
+                                  👥 See community notes
+                                </button>
+                              ) : (
+                                <CommunityNotes
+                                  sessionKey={key}
+                                  sessionTopic={day.topic}
+                                  prompts={day.prompts}
+                                  onClose={() => setCommunityNoteSession(null)}
+                                />
+                              )}
                             </div>
                           )}
                         </div>
@@ -487,6 +618,15 @@ export default function Dashboard() {
           ApexMBA is an open source self-study platform not affiliated with Harvard University or Harvard Business School. Licensed under MIT.
         </p>
       </div>
+
+      {/* Profile Settings modal */}
+      {profileOpen && (
+        <ProfileSettings
+          onClose={() => setProfileOpen(false)}
+          notesPublicDefault={notesPublicDefault}
+          onNotesPublicDefaultChange={setNotesPublicDefault}
+        />
+      )}
     </div>
   );
 }
