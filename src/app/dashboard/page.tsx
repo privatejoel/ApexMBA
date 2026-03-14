@@ -5,6 +5,7 @@ import { useUser, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { WEEKS, TYPE_COLORS } from "@/lib/data";
 import dynamic from "next/dynamic";
+import ReactMarkdown from "react-markdown";
 
 const ExcalidrawCanvas = dynamic(() => import("./ExcalidrawWrapper"), {
   ssr: false,
@@ -95,6 +96,27 @@ function Textarea({ value, onChange, placeholder, rows = 3 }: { value: string; o
   );
 }
 
+/* ── Markdown preview renderer ── */
+const mdComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => <p style={{ fontSize: 13, lineHeight: 1.8, color: "#333", margin: "0 0 8px", fontFamily: "Georgia,serif" }}>{children}</p>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 style={{ fontSize: 20, fontWeight: "normal", color: "#1a1a1a", margin: "0 0 8px", fontFamily: "Georgia,serif" }}>{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 style={{ fontSize: 17, fontWeight: "normal", color: "#1a1a1a", margin: "0 0 8px", fontFamily: "Georgia,serif" }}>{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 style={{ fontSize: 15, fontWeight: "bold", color: "#1a1a1a", margin: "0 0 6px", fontFamily: "Georgia,serif" }}>{children}</h3>,
+  strong: ({ children }: { children?: React.ReactNode }) => <strong style={{ color: "#1a1a1a" }}>{children}</strong>,
+  em: ({ children }: { children?: React.ReactNode }) => <em style={{ fontStyle: "italic" }}>{children}</em>,
+  code: ({ children, className }: { children?: React.ReactNode; className?: string }) =>
+    className
+      ? <pre style={{ background: "#0d1117", borderRadius: 5, padding: "7px 11px", overflowX: "auto", margin: "0 0 8px" }}><code style={{ fontSize: 12, color: "#7ee787", fontFamily: "monospace", whiteSpace: "pre" }}>{children}</code></pre>
+      : <code style={{ background: "#f0eafa", color: "#4a2d80", fontFamily: "monospace", borderRadius: 3, padding: "1px 4px", fontSize: 12 }}>{children}</code>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul style={{ paddingLeft: 20, margin: "0 0 8px" }}>{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol style={{ paddingLeft: 20, margin: "0 0 8px" }}>{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li style={{ fontSize: 13, lineHeight: 1.8, fontFamily: "sans-serif", color: "#333" }}>{children}</li>,
+  blockquote: ({ children }: { children?: React.ReactNode }) => <blockquote style={{ borderLeft: "3px solid #c9b8e0", paddingLeft: 12, color: "#888", margin: "0 0 8px", fontStyle: "italic" }}>{children}</blockquote>,
+};
+function MarkdownContent({ content }: { content: string }) {
+  return <div style={{ padding: "10px 12px", background: "#fffef9", borderRadius: 5, border: "1px solid #ede6f5", minHeight: 40 }}><ReactMarkdown components={mdComponents}>{content}</ReactMarkdown></div>;
+}
+
 type Notes = Record<string, { prompts: string[]; freeNote: string; drawing?: string }>;
 type Done = Record<string, boolean>;
 type NoteTab = Record<string, "guided" | "free" | "draw">;
@@ -107,7 +129,11 @@ export default function Dashboard() {
   const [done, setDone] = usePersistedState<Done>("done", {});
   const [notes, setNotes] = usePersistedState<Notes>("notes", {});
   const [noteTab, setNoteTab] = useState<NoteTab>({});
+  const [previewMode, setPreviewMode] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const getPreview = (k: string) => previewMode[k] ?? false;
+  const togglePreview = (k: string) => setPreviewMode(p => ({ ...p, [k]: !p[k] }));
 
   const toggleDone = (k: string) => setDone(p => ({ ...p, [k]: !p[k] }));
   const toggleExp = (k: string) => setExpanded(p => p === k ? null : k);
@@ -262,13 +288,13 @@ export default function Dashboard() {
                         {d.prompts.map((pr, i) => pn[i]?.trim() ? (
                           <div key={i}>
                             <div style={{ fontSize: 10, color: "#9b80c0", fontFamily: "sans-serif", fontWeight: "bold", marginBottom: 3 }}>{pr}</div>
-                            <div style={{ fontSize: 12, lineHeight: 1.8, color: "#333", whiteSpace: "pre-wrap", padding: "8px 11px", background: "#fffef9", border: "1px solid #ede6f5", borderRadius: 4 }}>{pn[i]}</div>
+                            <MarkdownContent content={pn[i]} />
                           </div>
                         ) : null)}
                         {fn.trim() && (
                           <div>
                             <div style={{ fontSize: 10, color: "#9b80c0", fontFamily: "sans-serif", fontWeight: "bold", marginBottom: 3 }}>Free Notes</div>
-                            <div style={{ fontSize: 12, lineHeight: 1.8, color: "#333", whiteSpace: "pre-wrap", padding: "8px 11px", background: "#fffef9", border: "1px solid #ede6f5", borderRadius: 4 }}>{fn}</div>
+                            <MarkdownContent content={fn} />
                           </div>
                         )}
                         {(() => {
@@ -377,6 +403,11 @@ export default function Dashboard() {
                                     <span>📓</span>
                                     <span style={{ fontSize: 13, fontWeight: "bold", color: "#4a2d80", fontFamily: "sans-serif" }}>My Notes</span>
                                     {noted && <span style={{ fontSize: 9, background: "#4a2d80", color: "#fff", borderRadius: 10, padding: "2px 8px", fontFamily: "sans-serif" }}>saved</span>}
+                                    {tab !== "draw" && (
+                                      <button onClick={() => togglePreview(key)} style={{ fontSize: 10, fontFamily: "sans-serif", padding: "3px 9px", background: getPreview(key) ? "#4a2d80" : "transparent", color: getPreview(key) ? "#fff" : "#9b7fc0", border: "1px solid #c9b8e0", borderRadius: 4, cursor: "pointer" }}>
+                                        {getPreview(key) ? "✏️ Edit" : "👁 Preview"}
+                                      </button>
+                                    )}
                                   </div>
                                   <div style={{ display: "flex", background: "#ede4fc", borderRadius: 6, padding: 3, gap: 2 }}>
                                     {(["guided", "free", "draw"] as const).map(t => (
@@ -393,13 +424,21 @@ export default function Dashboard() {
                                         <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", background: "#ede4fc", color: "#4a2d80", borderRadius: "50%", width: 16, height: 16, fontSize: 9, marginRight: 5 }}>{pi + 1}</span>
                                         {prompt}
                                       </label>
-                                      <Textarea value={getPN(key, pi)} onChange={v => setPN(key, pi, v)} placeholder="Write your answer here..." rows={2} />
+                                      {getPreview(key)
+                                        ? getPN(key, pi).trim()
+                                          ? <MarkdownContent content={getPN(key, pi)} />
+                                          : <div style={{ fontSize: 12, color: "#ccc", fontStyle: "italic", fontFamily: "sans-serif", padding: "10px 12px" }}>Nothing written yet.</div>
+                                        : <Textarea value={getPN(key, pi)} onChange={v => setPN(key, pi, v)} placeholder="Write your answer here..." rows={2} />}
                                     </div>
                                   ))}
                                   {tab === "free" && (
                                     <div>
-                                      <div style={{ fontSize: 12, color: "#b0a0c0", marginBottom: 7, fontStyle: "italic", fontFamily: "sans-serif" }}>Raw thoughts, questions, connections to your work...</div>
-                                      <Textarea value={getFN(key)} onChange={v => setFN(key, v)} placeholder="Free-form notes for this session..." rows={4} />
+                                      {!getPreview(key) && <div style={{ fontSize: 12, color: "#b0a0c0", marginBottom: 7, fontStyle: "italic", fontFamily: "sans-serif" }}>Raw thoughts, questions, connections to your work...</div>}
+                                      {getPreview(key)
+                                        ? getFN(key).trim()
+                                          ? <MarkdownContent content={getFN(key)} />
+                                          : <div style={{ fontSize: 12, color: "#ccc", fontStyle: "italic", fontFamily: "sans-serif", padding: "10px 12px" }}>Nothing written yet.</div>
+                                        : <Textarea value={getFN(key)} onChange={v => setFN(key, v)} placeholder="Free-form notes for this session..." rows={4} />}
                                     </div>
                                   )}
                                   {tab === "draw" && (
