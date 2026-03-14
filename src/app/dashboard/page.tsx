@@ -4,6 +4,16 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useUser, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { WEEKS, TYPE_COLORS } from "@/lib/data";
+import dynamic from "next/dynamic";
+
+const ExcalidrawCanvas = dynamic(() => import("./ExcalidrawWrapper"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: 400, display: "flex", alignItems: "center", justifyContent: "center", background: "#fffef9", border: "1px solid #e0d4f0", borderRadius: 6, color: "#b0a0c0", fontFamily: "sans-serif", fontSize: 13 }}>
+      Loading drawing canvas...
+    </div>
+  ),
+});
 
 /* ── Local-storage persistence keyed by userId ── */
 function usePersistedState<T>(key: string, init: T): [T, (v: T | ((prev: T) => T)) => void] {
@@ -85,9 +95,9 @@ function Textarea({ value, onChange, placeholder, rows = 3 }: { value: string; o
   );
 }
 
-type Notes = Record<string, { prompts: string[]; freeNote: string }>;
+type Notes = Record<string, { prompts: string[]; freeNote: string; drawing?: string }>;
 type Done = Record<string, boolean>;
-type NoteTab = Record<string, "guided" | "free">;
+type NoteTab = Record<string, "guided" | "free" | "draw">;
 
 export default function Dashboard() {
   const { user } = useUser();
@@ -102,7 +112,7 @@ export default function Dashboard() {
   const toggleDone = (k: string) => setDone(p => ({ ...p, [k]: !p[k] }));
   const toggleExp = (k: string) => setExpanded(p => p === k ? null : k);
   const getTab = (k: string) => noteTab[k] ?? "guided";
-  const setTab = (k: string, t: "guided" | "free") => setNoteTab(p => ({ ...p, [k]: t }));
+  const setTab = (k: string, t: "guided" | "free" | "draw") => setNoteTab(p => ({ ...p, [k]: t }));
   const getPN = (k: string, i: number) => notes[k]?.prompts?.[i] ?? "";
   const setPN = (k: string, i: number, v: string) => setNotes(p => {
     const pr = [...(p[k]?.prompts ?? [])]; pr[i] = v;
@@ -110,9 +120,20 @@ export default function Dashboard() {
   });
   const getFN = (k: string) => notes[k]?.freeNote ?? "";
   const setFN = (k: string, v: string) => setNotes(p => ({ ...p, [k]: { ...p[k], freeNote: v, prompts: p[k]?.prompts ?? [] } }));
+  const getDR = (k: string): string => notes[k]?.drawing ?? "";
+  const setDR = (k: string, v: string) => setNotes(p => ({ ...p, [k]: { ...p[k], drawing: v, prompts: p[k]?.prompts ?? [], freeNote: p[k]?.freeNote ?? "" } }));
+  const hasDrawing = (k: string) => {
+    const dr = notes[k]?.drawing;
+    if (!dr) return false;
+    try { const els = JSON.parse(dr); return Array.isArray(els) && els.length > 0; } catch { return false; }
+  };
   const hasNote = (k: string) => {
     const n = notes[k];
-    return n && ((n.prompts ?? []).some(s => s?.trim()) || (n.freeNote ?? "").trim());
+    if (!n) return false;
+    if ((n.prompts ?? []).some(s => s?.trim())) return true;
+    if ((n.freeNote ?? "").trim()) return true;
+    if (hasDrawing(k)) return true;
+    return false;
   };
 
   const total = WEEKS.reduce((s, w) => s + w.days.length, 0);
@@ -230,7 +251,12 @@ export default function Dashboard() {
                         <span style={{ fontFamily: "sans-serif", fontSize: 10, color: "#aaa" }}>Wk {w.number} · {d.day}</span>
                         <span style={{ fontSize: 15, flex: 1 }}>{d.topic}</span>
                         <span style={{ padding: "2px 8px", background: tc.bg, color: tc.tx, border: `1px solid ${tc.bd}`, borderRadius: 3, fontSize: 10, fontFamily: "sans-serif" }}>{d.type}</span>
-                        <button onClick={() => { setView("module"); setActiveWeek(w.number - 1); setExpanded(key); }} style={{ padding: "3px 10px", background: "transparent", border: "1px solid #c9b8e0", borderRadius: 3, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", color: "#7c4dab" }}>Edit ✏️</button>
+                        <button onClick={() => {
+                          setView("module"); setActiveWeek(w.number - 1); setExpanded(key);
+                          const n = notes[key];
+                          const hasTextNotes = (n?.prompts ?? []).some(s => s?.trim()) || (n?.freeNote ?? "").trim();
+                          if (!hasTextNotes && n?.drawing) { try { const els = JSON.parse(n.drawing); if (Array.isArray(els) && els.length > 0) setTab(key, "draw"); } catch {} }
+                        }} style={{ padding: "3px 10px", background: "transparent", border: "1px solid #c9b8e0", borderRadius: 3, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", color: "#7c4dab" }}>Edit ✏️</button>
                       </div>
                       <div style={{ padding: "15px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
                         {d.prompts.map((pr, i) => pn[i]?.trim() ? (
@@ -245,6 +271,23 @@ export default function Dashboard() {
                             <div style={{ fontSize: 12, lineHeight: 1.8, color: "#333", whiteSpace: "pre-wrap", padding: "8px 11px", background: "#fffef9", border: "1px solid #ede6f5", borderRadius: 4 }}>{fn}</div>
                           </div>
                         )}
+                        {(() => {
+                          const dr = notes[key]?.drawing;
+                          if (!dr) return null;
+                          let els: unknown[];
+                          try { els = JSON.parse(dr); } catch { return null; }
+                          if (!Array.isArray(els) || els.length === 0) return null;
+                          return (
+                            <div>
+                              <div style={{ fontSize: 10, color: "#9b80c0", fontFamily: "sans-serif", fontWeight: "bold", marginBottom: 3 }}>Drawing</div>
+                              <div style={{ fontSize: 12, color: "#888", padding: "12px", background: "#fffef9", border: "1px solid #ede6f5", borderRadius: 4, fontFamily: "sans-serif", display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontSize: 18 }}>🎨</span>
+                                <span>{els.length} element{els.length !== 1 ? "s" : ""}</span>
+                                <button onClick={() => { setView("module"); setActiveWeek(w.number - 1); setExpanded(key); setTab(key, "draw"); }} style={{ marginLeft: "auto", padding: "3px 10px", background: "transparent", border: "1px solid #c9b8e0", borderRadius: 3, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", color: "#7c4dab" }}>Open Drawing</button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
@@ -315,6 +358,7 @@ export default function Dashboard() {
                               <div style={{ fontSize: 15, color: isDone ? "#aaa" : "#1a1a1a", textDecoration: isDone ? "line-through" : "none" }}>{day.topic}</div>
                             </div>
                             {noted && <span style={{ fontSize: 11, opacity: .6 }}>📓</span>}
+                            {hasDrawing(key) && <span style={{ fontSize: 11, opacity: .6 }}>🎨</span>}
                             <span style={{ padding: "3px 9px", background: tc.bg, color: tc.tx, border: `1px solid ${tc.bd}`, borderRadius: 3, fontSize: 10, fontFamily: "sans-serif", flexShrink: 0 }}>{day.type}</span>
                             <span style={{ color: "#bbb", fontSize: 14, display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform .2s" }}>›</span>
                           </div>
@@ -335,9 +379,9 @@ export default function Dashboard() {
                                     {noted && <span style={{ fontSize: 9, background: "#4a2d80", color: "#fff", borderRadius: 10, padding: "2px 8px", fontFamily: "sans-serif" }}>saved</span>}
                                   </div>
                                   <div style={{ display: "flex", background: "#ede4fc", borderRadius: 6, padding: 3, gap: 2 }}>
-                                    {(["guided", "free"] as const).map(t => (
+                                    {(["guided", "free", "draw"] as const).map(t => (
                                       <button key={t} onClick={() => setTab(key, t)} style={{ padding: "5px 11px", fontSize: 11, fontFamily: "sans-serif", background: tab === t ? "#fff" : "transparent", color: tab === t ? "#4a2d80" : "#9b7fc0", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: tab === t ? "bold" : "normal" }}>
-                                        {t === "guided" ? "Guided" : "Free Notes"}
+                                        {t === "guided" ? "Guided" : t === "free" ? "Free Notes" : "Draw"}
                                       </button>
                                     ))}
                                   </div>
@@ -356,6 +400,16 @@ export default function Dashboard() {
                                     <div>
                                       <div style={{ fontSize: 12, color: "#b0a0c0", marginBottom: 7, fontStyle: "italic", fontFamily: "sans-serif" }}>Raw thoughts, questions, connections to your work...</div>
                                       <Textarea value={getFN(key)} onChange={v => setFN(key, v)} placeholder="Free-form notes for this session..." rows={4} />
+                                    </div>
+                                  )}
+                                  {tab === "draw" && (
+                                    <div>
+                                      <div style={{ fontSize: 12, color: "#b0a0c0", marginBottom: 7, fontStyle: "italic", fontFamily: "sans-serif" }}>Sketch diagrams, frameworks, and visual notes...</div>
+                                      <ExcalidrawCanvas
+                                        key={key}
+                                        initialElements={getDR(key) ? (() => { try { return JSON.parse(getDR(key)); } catch { return null; } })() : null}
+                                        onSave={(elements) => setDR(key, JSON.stringify(elements))}
+                                      />
                                     </div>
                                   )}
                                   <div style={{ marginTop: 10, fontSize: 11, color: "#c0b0d0", textAlign: "right", fontFamily: "sans-serif" }}>
