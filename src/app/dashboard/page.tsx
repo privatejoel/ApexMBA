@@ -136,6 +136,7 @@ export default function Dashboard() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileReady, setProfileReady] = useState(false);
+  const [notesPublicDefault, setNotesPublicDefault] = usePersistedState<boolean>("notesPublicDefault", true);
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "error">("idle");
   const [communityNoteSession, setCommunityNoteSession] = useState<string | null>(null);
   const [communityCounts, setCommunityCounts] = useState<Record<string, number>>({});
@@ -237,7 +238,7 @@ export default function Dashboard() {
         fetch("/api/notes/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_key: key, prompts: snap.prompts ?? [], free_note: snap.freeNote ?? "", notes_public: true }),
+          body: JSON.stringify({ session_key: key, prompts: snap.prompts ?? [], free_note: snap.freeNote ?? "", notes_public: notesPublicDefault }),
         }).catch(console.error);
       }, 1500);
     }
@@ -619,7 +620,13 @@ export default function Dashboard() {
       </div>
 
       {/* Profile Settings modal */}
-      {profileOpen && <ProfileSettings onClose={() => setProfileOpen(false)} />}
+      {profileOpen && (
+        <ProfileSettings
+          onClose={() => setProfileOpen(false)}
+          notesPublicDefault={notesPublicDefault}
+          onNotesPublicDefaultChange={setNotesPublicDefault}
+        />
+      )}
     </div>
   );
 }

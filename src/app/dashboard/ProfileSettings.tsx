@@ -4,12 +4,13 @@ import { useState, useEffect, useCallback } from "react";
 
 interface ProfileSettingsProps {
   onClose: () => void;
+  notesPublicDefault: boolean;
+  onNotesPublicDefaultChange: (val: boolean) => void;
 }
 
-export default function ProfileSettings({ onClose }: ProfileSettingsProps) {
+export default function ProfileSettings({ onClose, notesPublicDefault, onNotesPublicDefaultChange }: ProfileSettingsProps) {
   const [displayName, setDisplayName] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
-  const [notesPublicDefault, setNotesPublicDefault] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -152,7 +153,7 @@ export default function ProfileSettings({ onClose }: ProfileSettingsProps) {
                     <input
                       type="checkbox"
                       checked={notesPublicDefault}
-                      onChange={(e) => setNotesPublicDefault(e.target.checked)}
+                      onChange={(e) => onNotesPublicDefaultChange(e.target.checked)}
                       style={{ marginTop: 2, accentColor: "#7c4dab" }}
                     />
                     <div>
